@@ -2887,6 +2887,21 @@ g_fork(void)
 }
 
 /*****************************************************************************/
+int
+g_fork_execvp(const char *p1, char *args[])
+{
+    int pid;
+
+    pid = g_fork();
+
+    if (pid == 0) {
+        g_execvp(p1, args);
+    }
+
+    return pid;
+}
+
+/*****************************************************************************/
 /* does not work in win32 */
 int
 g_setgid(int pid)
