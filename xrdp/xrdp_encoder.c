@@ -91,7 +91,7 @@ xrdp_encoder_create(struct xrdp_mm *mm)
         self->process_enc = process_enc_rfx;
         self->codec_handle = rfxcodec_encode_create(mm->wm->screen->width,
                              mm->wm->screen->height,
-                             RFX_FORMAT_YUV, 0);
+                             RFX_FORMAT_BGRA, 0);
     }
 #endif
     else if (client_info->h264_codec_id != 0)
