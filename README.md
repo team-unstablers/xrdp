@@ -21,7 +21,10 @@ Many of these work on some or all of Windows, Mac OS, iOS, and/or Android.
 
 RDP transport is encrypted using TLS by default.
 
-![demo](https://github.com/neutrinolabs/xrdp/raw/gh-pages/xrdp_demo.gif)
+
+[demo](https://user-images.githubusercontent.com/964412/222645512-7188132a-79fa-4706-ab28-826e8a2c83a9.mp4)
+
+
 
 ## Features
 
