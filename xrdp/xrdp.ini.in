@@ -124,7 +124,7 @@ dark_blue=0078d7
 #ls_title=My Login Title
 
 ; top level window background color in RGB format
-ls_top_window_bg_color=003057
+ls_top_window_bg_color=517eb9
 
 ; width and height of login screen
 ;
@@ -137,11 +137,11 @@ ls_top_window_bg_color=003057
 ; larger, and also increase <ls_btn_ok_y_pos> and <ls_btn_cancel_y_pos>
 ; below
 ;
-ls_width=350
-ls_height=360
+ls_width=512
+ls_height=460
 
 ; login screen background color in RGB format
-ls_bg_color=f0f0f0
+ls_bg_color=ececec
 
 ; optional background image filename. BMP format is always supported,
 ; but other formats will be supported if xrdp is build with imlib2
@@ -162,31 +162,31 @@ ls_bg_color=f0f0f0
 ; logo height are ignored for a transform of 'none'.
 ls_logo_filename=
 ls_logo_transform=scale
-ls_logo_width=250
-ls_logo_height=110
-ls_logo_x_pos=55
-ls_logo_y_pos=35
+ls_logo_width=500
+ls_logo_height=220
+ls_logo_x_pos=4
+ls_logo_y_pos=32
 
 ; for positioning labels such as username, password etc
-ls_label_x_pos=30
+ls_label_x_pos=32
 ls_label_width=68
 
 ; for positioning text and combo boxes next to above labels
 ls_input_x_pos=110
-ls_input_width=210
+ls_input_width=380
 
 ; y pos for first label and combo box
-ls_input_y_pos=158
+ls_input_y_pos=264
 
 ; OK button
-ls_btn_ok_x_pos=142
-ls_btn_ok_y_pos=308
+ls_btn_ok_x_pos=294
+ls_btn_ok_y_pos=398
 ls_btn_ok_width=85
 ls_btn_ok_height=30
 
 ; Cancel button
-ls_btn_cancel_x_pos=237
-ls_btn_cancel_y_pos=308
+ls_btn_cancel_x_pos=395
+ls_btn_cancel_y_pos=398
 ls_btn_cancel_width=85
 ls_btn_cancel_height=30
 
@@ -232,6 +232,12 @@ tcutils=true
 ; Some session types such as Xorg and Xvnc start a display server.
 ; Startup command-line parameters for the display server are configured
 ; in sesman.ini. See and configure also sesman.ini.
+[Ulalaca]
+name=Ulalaca
+lib=libulalaca.@lib_extension@
+username=ask
+password=ask
+
 [Xorg]
 name=Xorg
 lib=libxup.@lib_extension@
