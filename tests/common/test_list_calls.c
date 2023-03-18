@@ -1,4 +1,3 @@
-
 #if defined(HAVE_CONFIG_H)
 #include "config_ac.h"
 #endif
@@ -43,6 +42,11 @@ START_TEST(test_list__simple)
     val = list_get_item(lst, 10);
     ck_assert_int_eq(val, 10);
 
+    list_insert_item(lst, 0, 99);
+    ck_assert_int_eq(lst->count, TEST_LIST_SIZE + 1);
+    val = list_get_item(lst, 10);
+    ck_assert_int_eq(val, 9);
+
     list_clear(lst);
     ck_assert_int_eq(lst->count, 0);
     list_delete(lst);
@@ -61,7 +65,15 @@ START_TEST(test_list__simple_auto_free)
     {
         char strval[64];
         g_snprintf(strval, sizeof(strval), "%d", i);
-        list_add_item(lst, (tintptr)g_strdup(strval));
+        // Odds, use list_add_item/strdup, evens use list_add_strdup
+        if ((i % 2) != 0)
+        {
+            list_add_item(lst, (tintptr)g_strdup(strval));
+        }
+        else
+        {
+            list_add_strdup(lst, strval);
+        }
     }
 
     list_remove_item(lst, 0);
@@ -112,8 +124,72 @@ START_TEST(test_list__simple_append_list)
 }
 END_TEST
 
-/******************************************************************************/
+START_TEST(test_list__simple_strdup_multi)
+{
+    int i;
+    struct list *lst = list_create();
+    lst->auto_free = 1;
 
+    list_add_strdup_multi(lst,
+                          "0", "1", "2", "3", "4", "5",
+                          "6", "7", "8", "9", "10", "11",
+                          NULL);
+
+    ck_assert_int_eq(lst->count, 12);
+
+    for (i = 0 ; i < lst->count; ++i)
+    {
+        int val = g_atoi((const char *)list_get_item(lst, i));
+        ck_assert_int_eq(val, i);
+    }
+
+    list_delete(lst);
+}
+END_TEST
+
+int
+split_string_append_fragment(const char **start, const char *end,
+                             struct list *list);
+
+START_TEST(test_list__append_fragment)
+{
+    struct list *l = list_create();
+    l->auto_free = 1;
+
+    const char *test_string = "split this";
+
+    int fragment_ret = split_string_append_fragment(&test_string,
+                       test_string + 5, l);
+    ck_assert_int_eq(fragment_ret, 1);
+    ck_assert_str_eq((const char *)l->items[0], "split");
+
+    fragment_ret = split_string_append_fragment(&test_string,
+                   test_string + 1000, l);
+    ck_assert_int_eq(fragment_ret, 1);
+    ck_assert_str_eq((const char *)l->items[1], "this");
+
+    list_delete(l);
+}
+END_TEST
+
+START_TEST(test_list__split_string_into_list)
+{
+    struct list *l = split_string_into_list("The fat cat sat on my hat.", ' ');
+
+    ck_assert_int_eq(l->count, 7);
+    ck_assert_str_eq((const char *)l->items[0], "The");
+    ck_assert_str_eq((const char *)l->items[1], "fat");
+    ck_assert_str_eq((const char *)l->items[2], "cat");
+    ck_assert_str_eq((const char *)l->items[3], "sat");
+    ck_assert_str_eq((const char *)l->items[4], "on");
+    ck_assert_str_eq((const char *)l->items[5], "my");
+    ck_assert_str_eq((const char *)l->items[6], "hat.");
+
+    list_delete(l);
+}
+END_TEST
+
+/******************************************************************************/
 Suite *
 make_suite_test_list(void)
 {
@@ -127,6 +203,9 @@ make_suite_test_list(void)
     tcase_add_test(tc_simple, test_list__simple);
     tcase_add_test(tc_simple, test_list__simple_auto_free);
     tcase_add_test(tc_simple, test_list__simple_append_list);
+    tcase_add_test(tc_simple, test_list__simple_strdup_multi);
+    tcase_add_test(tc_simple, test_list__append_fragment);
+    tcase_add_test(tc_simple, test_list__split_string_into_list);
 
     return s;
 }
