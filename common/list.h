@@ -95,4 +95,55 @@ list_append_list_strdup(struct list *self, struct list *dest, int start_index);
 void
 list_dump_items(struct list *self);
 
+/**
+ * Splits a string on a separation character and then returns a list of
+ * the string split by the character, without the character contained within
+ * the pieces.
+ *
+ * The list must be disposed of by the caller.
+ *
+ * @param str String to split.
+ * @param character Character used as the delimiter between strings.
+ * @param start_index Index to start on the source list (zero based)
+ *
+ * @result 0 if a memory allocation failure occurred.
+ *
+ * String fragments in the list are created with strdup()
+ */
+struct list *
+split_string_into_list(const char *str, char character);
+
+/**
+ * As list_add_item() but for a C string
+ *
+ * This is a convenience function for a common operation
+ * @param self List to append to
+ * @param str String to append
+ *
+ * The passed-in string is strdup'd onto the list, so if auto_free
+ * isn't set, memory leaks will occur.
+ *
+ * A NULL pointer will be added as a NULL entry.
+ *
+ * @result 0 if any memory allocation failure occurred. In this case
+ * the list is unchanged.
+ */
+
+int
+list_add_strdup(struct list *self, const char *str);
+
+/**
+ * Add multiple strings to a list
+ *
+ * This is a convenience function for a common operation
+ * @param self List to append to
+ * @param ... Strings to append. Terminate the list with a NULL.
+ *
+ * @result 0 if any memory allocation failure occurred. In this case
+ * the list is unchanged.
+ */
+
+int
+list_add_strdup_multi(struct list *self, ...);
+
 #endif

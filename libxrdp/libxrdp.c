@@ -1137,6 +1137,7 @@ int EXPORT_CC
 libxrdp_reset(struct xrdp_session *session,
               unsigned int width, unsigned int height, int bpp)
 {
+    LOG_DEVEL(LOG_LEVEL_TRACE, "libxrdp_reset:");
     if (session->client_info != 0)
     {
         struct xrdp_client_info *client_info = session->client_info;
@@ -1375,6 +1376,10 @@ libxrdp_send_to_channel(struct xrdp_session *session, int channel_id,
         free_stream(s);
         return 1;
     }
+    else
+    {
+        LOG(LOG_LEVEL_TRACE, "libxrdp_send_to_channel: xrdp_channel_init successful!");
+    }
 
     /* here we make a copy of the data */
     out_uint8a(s, data, data_len);
@@ -1433,6 +1438,8 @@ libxrdp_drdynvc_open(struct xrdp_session *session, const char *name,
     struct xrdp_sec *sec;
     struct xrdp_channel *chan;
 
+    LOG_DEVEL(LOG_LEVEL_TRACE, "libxrdp_drdynvc_open:");
+
     rdp = (struct xrdp_rdp *) (session->rdp);
     sec = rdp->sec_layer;
     chan = sec->chan_layer;
@@ -1446,6 +1453,8 @@ libxrdp_drdynvc_close(struct xrdp_session *session, int chan_id)
     struct xrdp_rdp *rdp;
     struct xrdp_sec *sec;
     struct xrdp_channel *chan;
+
+    LOG_DEVEL(LOG_LEVEL_TRACE, "libxrdp_drdynvc_close:");
 
     rdp = (struct xrdp_rdp *) (session->rdp);
     sec = rdp->sec_layer;
@@ -1463,6 +1472,8 @@ libxrdp_drdynvc_data_first(struct xrdp_session *session, int chan_id,
     struct xrdp_sec *sec;
     struct xrdp_channel *chan;
 
+    LOG_DEVEL(LOG_LEVEL_TRACE, "libxrdp_drdynvc_data_first:");
+
     rdp = (struct xrdp_rdp *) (session->rdp);
     sec = rdp->sec_layer;
     chan = sec->chan_layer;
@@ -1478,6 +1489,8 @@ libxrdp_drdynvc_data(struct xrdp_session *session, int chan_id,
     struct xrdp_rdp *rdp;
     struct xrdp_sec *sec;
     struct xrdp_channel *chan;
+
+    LOG_DEVEL(LOG_LEVEL_TRACE, "libxrdp_drdynvc_data:");
 
     rdp = (struct xrdp_rdp *) (session->rdp);
     sec = rdp->sec_layer;
@@ -2081,7 +2094,9 @@ libxrdp_process_monitor_stream(struct stream *s,
         }
     }
 
-    /* set wm geometry if the encompassing area is well formed. Otherwise, log and return an error.*/
+    /* set wm geometry if the encompassing area is well formed.
+       Otherwise, log and return an error.
+    */
     if (all_monitors_encompassing_bounds.right
             > all_monitors_encompassing_bounds.left
             && all_monitors_encompassing_bounds.bottom
@@ -2256,4 +2271,16 @@ libxrdp_process_monitor_ex_stream(struct stream *s,
     }
 
     return 0;
+}
+/*****************************************************************************/
+int EXPORT_CC
+libxrdp_planar_compress(char *in_data, int width, int height,
+                        struct stream *s, int bpp, int byte_limit,
+                        int start_line, struct stream *temp_s,
+                        int e, int flags)
+{
+    return xrdp_bitmap32_compress(in_data, width, height,
+                                  s, bpp, byte_limit,
+                                  start_line, temp_s,
+                                  e, flags);
 }
