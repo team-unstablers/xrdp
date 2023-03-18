@@ -32,6 +32,14 @@ struct exit_status
     uint8_t signal_no;
 };
 
+enum xrdp_exe
+{
+    E_XE_XRDP = 0,
+    E_XE_SESMAN = 1,
+    
+    // TODO: add others below
+};
+
 #define g_tcp_can_recv g_sck_can_recv
 #define g_tcp_can_send g_sck_can_send
 #define g_tcp_recv g_sck_recv
@@ -260,7 +268,7 @@ int      g_setlogin(const char *name);
  */
 int      g_set_allusercontext(int uid);
 #endif
-void     g_get_executable_path(char *buf, int bufsize);
+void     g_get_executable_path(enum xrdp_exe xe, char *buf, int bufsize);
 int      g_waitchild(void);
 int      g_waitpid(int pid);
 struct exit_status g_waitpid_status(int pid);
