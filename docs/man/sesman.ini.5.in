@@ -292,6 +292,10 @@ To keep compatibility, the following aliases are also available.
 If set to \fB1\fR, \fBtrue\fR or \fByes\fR, require group membership even
 if the group specified in \fBTerminalServerUsers\fR doesn't exist.
 
+.TP
+\fBAllowAlternateShell\fR=\fI[true|false]\fR
+If set to \fB0\fR, \fBfalse\fR or \fBno\fR, prevent usage of alternate shells by users.
+
 .SH "X11 SERVER"
 Following parameters can be used in the \fB[Xvnc]\fR and
 \fB[Xorg]\fR sections.
@@ -358,6 +362,24 @@ GNOME 3 versions later than 3.29.92. Do not use this for any other reason.
 
 This setting will be removed in a later version of xrdp, when GNOME 3 is
 no longer supported.
+
+.TP
+\fBSoundNumSilentFramesAAC\fR=\fInumber\fR
+Sets the \fInumber\fR of silent frames which are sent to client before close
+message is sent, when AAC is selected. If set to 0, no silent frame is sent.
+If not specified, defaults to \fI4\fR.
+
+.TP
+\fBSoundNumSilentFramesMP3\fR=\fInumber\fR
+Sets the \fInumber\fR of silent frames which are sent to client before close
+message is sent, when MP3 is selected. If set to 0, no silent frame is sent.
+If not specified, defaults to \fI2\fR.
+
+.TP
+\fBSoundMsecDoNotSend\fR=\fInumber\fR
+Sets the duration(msec). Sound data is not send to client during \fInumber\fR
+millisecond(s) after close message is sent, when AAC/MP3 is selected.
+If set to 0, all the data is sent. If not specified, defaults to \fI1000\fR.
 
 .SH "SESSIONS VARIABLES"
 All entries in the \fB[SessionVariables]\fR section are set as

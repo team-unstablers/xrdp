@@ -364,6 +364,8 @@ struct xrdp_mm
 {
     struct xrdp_wm *wm; /* owner */
     enum mm_connect_state connect_state; /* State of connection */
+    int mmcs_expecting_msg; /* Connect state machine is expecting
+                               a message from sesman */
     /* Other processes we connect to */
     int use_sesman; /* true if this is a sesman session */
     int use_gw_login; /* True if we're to login using  a gateway */
@@ -679,6 +681,7 @@ struct xrdp_startup_params
     int version;
     int fork;
     int dump_config;
+    int license;
     int tcp_send_buffer_bytes;
     int tcp_recv_buffer_bytes;
     int tcp_nodelay;

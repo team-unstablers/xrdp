@@ -193,38 +193,6 @@ g_deinit(void)
 }
 
 /*****************************************************************************/
-/* allocate memory, returns a pointer to it, size bytes are allocated,
-   if zero is non zero, each byte will be set to zero */
-void *
-g_malloc(int size, int zero)
-{
-    char *rv;
-
-    rv = (char *)malloc(size);
-
-    if (zero)
-    {
-        if (rv != 0)
-        {
-            memset(rv, 0, size);
-        }
-    }
-
-    return rv;
-}
-
-/*****************************************************************************/
-/* free the memory pointed to by ptr, ptr can be zero */
-void
-g_free(void *ptr)
-{
-    if (ptr != 0)
-    {
-        free(ptr);
-    }
-}
-
-/*****************************************************************************/
 /* output text to stdout, try to use g_write / g_writeln instead to avoid
    linux / windows EOL problems */
 void
@@ -331,27 +299,6 @@ g_hexdump(const char *p, int len)
         offset += thisline;
         line += thisline;
     }
-}
-
-/*****************************************************************************/
-void
-g_memset(void *ptr, int val, int size)
-{
-    memset(ptr, val, size);
-}
-
-/*****************************************************************************/
-void
-g_memcpy(void *d_ptr, const void *s_ptr, int size)
-{
-    memcpy(d_ptr, s_ptr, size);
-}
-
-/*****************************************************************************/
-void
-g_memmove(void *d_ptr, const void *s_ptr, int size)
-{
-    memmove(d_ptr, s_ptr, size);
 }
 
 /*****************************************************************************/
@@ -1398,6 +1345,13 @@ g_sleep(int msecs)
 
 /*****************************************************************************/
 int
+g_pipe(int fd[2])
+{
+    return pipe(fd);
+}
+
+/*****************************************************************************/
+int
 g_sck_last_error_would_block(int sck)
 {
 #if defined(_WIN32)
@@ -1767,6 +1721,8 @@ g_create_wait_obj(const char *name)
         close(fds[1]);
         return 0;
     }
+    g_file_set_cloexec(fds[0], 1);
+    g_file_set_cloexec(fds[1], 1);
     return (fds[1] << 16) | fds[0];
 #endif
 }
@@ -2296,6 +2252,102 @@ g_file_lock(int fd, int start, int len)
 }
 
 /*****************************************************************************/
+/* Gets the close-on-exec flag for a file descriptor */
+int
+g_file_get_cloexec(int fd)
+{
+    int rv = 0;
+    int flags = fcntl(fd, F_GETFD);
+    if (flags >= 0 && (flags & FD_CLOEXEC) != 0)
+    {
+        rv = 1;
+    }
+
+    return rv;
+}
+
+/*****************************************************************************/
+/* Sets/clears the close-on-exec flag for a file descriptor */
+/* return boolean */
+int
+g_file_set_cloexec(int fd, int status)
+{
+    int rv = 0;
+    int current_flags = fcntl(fd, F_GETFD);
+    if (current_flags >= 0)
+    {
+        int new_flags;
+        if (status)
+        {
+            new_flags = current_flags | FD_CLOEXEC;
+        }
+        else
+        {
+            new_flags = current_flags & ~FD_CLOEXEC;
+        }
+        if (new_flags != current_flags)
+        {
+            rv = (fcntl(fd, F_SETFD, new_flags) >= 0);
+        }
+    }
+
+    return rv;
+}
+
+/*****************************************************************************/
+struct list *
+g_get_open_fds(int min, int max)
+{
+    struct list *result = list_create();
+
+    if (result != NULL)
+    {
+        if (max < 0)
+        {
+            max = sysconf(_SC_OPEN_MAX);
+        }
+
+        if (max > min)
+        {
+            struct pollfd *fds = g_new0(struct pollfd, max - min);
+            int i;
+
+            if (fds == NULL)
+            {
+                goto nomem;
+            }
+
+            for (i = min ; i < max ; ++i)
+            {
+                fds[i - min].fd = i;
+            }
+
+            if (poll(fds, max - min, 0) >= 0)
+            {
+                for (i = min ; i < max ; ++i)
+                {
+                    if (fds[i - min].revents != POLLNVAL)
+                    {
+                        // Descriptor is open
+                        if (!list_add_item(result, i))
+                        {
+                            goto nomem;
+                        }
+                    }
+                }
+            }
+            g_free(fds);
+        }
+    }
+
+    return result;
+
+nomem:
+    list_delete(result);
+    return NULL;
+}
+
+/*****************************************************************************/
 /* Converts a hex mask to a mode_t value */
 #if !defined(_WIN32)
 static mode_t
@@ -2343,6 +2395,24 @@ mode_t_to_hex(mode_t mode)
     return hex;
 }
 #endif
+
+/*****************************************************************************/
+/* Duplicates a file descriptor onto another one using the semantics
+ * of dup2() */
+/* return boolean */
+int
+g_file_duplicate_on(int fd, int target_fd)
+{
+    int rv = (dup2(fd, target_fd) >= 0);
+
+    if (rv < 0)
+    {
+        LOG(LOG_LEVEL_ERROR, "Can't clone file %d as file %d [%s]",
+            fd, target_fd, g_get_strerror());
+    }
+
+    return rv;
+}
 
 /*****************************************************************************/
 /* returns error */
@@ -3051,9 +3121,11 @@ g_set_allusercontext(int uid)
 #endif
 /*****************************************************************************/
 /* does not work in win32
-   returns pid of process that exits or zero if signal occurred */
+   returns pid of process that exits or zero if signal occurred
+   an exit_status struct can optionally be passed in to get the
+   exit status of the child */
 int
-g_waitchild(void)
+g_waitchild(struct exit_status *e)
 {
 #if defined(_WIN32)
     return 0;
@@ -3061,14 +3133,35 @@ g_waitchild(void)
     int wstat;
     int rv;
 
+    struct exit_status dummy;
+
+    if (e == NULL)
+    {
+        e = &dummy;  // Set this, then throw it away
+    }
+
+    e->reason = E_XR_UNEXPECTED;
+    e->val = 0;
+
     rv = waitpid(0, &wstat, WNOHANG);
 
     if (rv == -1)
     {
-        if (errno == EINTR) /* signal occurred */
+        if (errno == EINTR)
         {
+            /* This shouldn't happen as signal handlers use SA_RESTART */
             rv = 0;
         }
+    }
+    else if (WIFEXITED(wstat))
+    {
+        e->reason = E_XR_STATUS_CODE;
+        e->val = WEXITSTATUS(wstat);
+    }
+    else if (WIFSIGNALED(wstat))
+    {
+        e->reason = E_XR_SIGNAL;
+        e->val = WTERMSIG(wstat);
     }
 
     return rv;
@@ -3077,7 +3170,10 @@ g_waitchild(void)
 
 /*****************************************************************************/
 /* does not work in win32
-   returns pid of process that exits or <= 0 if no process was found */
+   returns pid of process that exits or <= 0 if no process was found
+
+   Note that signal handlers are established with BSD-style semantics,
+   so this call is NOT interrupted by a signal  */
 int
 g_waitpid(int pid)
 {
@@ -3101,25 +3197,21 @@ g_waitpid(int pid)
 
 /*****************************************************************************/
 /* does not work in win32
-   returns exit status code of child process with pid */
+   returns exit status code of child process with pid
+
+   Note that signal handlers are established with BSD-style semantics,
+   so this call is NOT interrupted by a signal  */
 struct exit_status
 g_waitpid_status(int pid)
 {
-    struct exit_status exit_status;
+    struct exit_status exit_status = {.reason = E_XR_UNEXPECTED, .val = 0};
 
-#if defined(_WIN32)
-    exit_status.exit_code = -1;
-    exit_status.signal_no = 0;
-    return exit_status;
-#else
-    int rv;
-    int status;
-
-    exit_status.exit_code = -1;
-    exit_status.signal_no = 0;
-
+#if !defined(_WIN32)
     if (pid > 0)
     {
+        int rv;
+        int status;
+
         LOG(LOG_LEVEL_DEBUG, "waiting for pid %d to exit", pid);
         rv = waitpid(pid, &status, 0);
 
@@ -3127,11 +3219,13 @@ g_waitpid_status(int pid)
         {
             if (WIFEXITED(status))
             {
-                exit_status.exit_code = WEXITSTATUS(status);
+                exit_status.reason = E_XR_STATUS_CODE;
+                exit_status.val = WEXITSTATUS(status);
             }
             if (WIFSIGNALED(status))
             {
-                exit_status.signal_no = WTERMSIG(status);
+                exit_status.reason = E_XR_SIGNAL;
+                exit_status.val = WTERMSIG(status);
             }
         }
         else
@@ -3140,8 +3234,8 @@ g_waitpid_status(int pid)
         }
     }
 
-    return exit_status;
 #endif
+    return exit_status;
 }
 
 /*****************************************************************************/

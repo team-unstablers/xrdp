@@ -23,13 +23,17 @@
 
 #include "arch.h"
 
+enum exit_reason
+{
+    E_XR_STATUS_CODE = 0, ///< 'val' contains exit status
+    E_XR_SIGNAL, ///< 'val' contains a signal number
+    E_XR_UNEXPECTED
+};
+
 struct exit_status
 {
-    /* set to -1 when the process exited via a signal */
-    uint8_t exit_code;
-
-    /* set to 0 when the process exited normally */
-    uint8_t signal_no;
+    enum exit_reason reason;
+    int val;
 };
 
 struct list;
@@ -52,8 +56,6 @@ int      g_rm_temp_dir(void);
 int      g_mk_socket_path(const char *app_name);
 void     g_init(const char *app_name);
 void     g_deinit(void);
-void    *g_malloc(int size, int zero);
-void     g_free(void *ptr);
 void g_printf(const char *format, ...) printflike(1, 2);
 void g_sprintf(char *dest, const char *format, ...) \
 printflike(2, 3);
@@ -62,9 +64,6 @@ printflike(3, 4);
 void g_writeln(const char *format, ...) printflike(1, 2);
 void g_write(const char *format, ...) printflike(1, 2);
 void     g_hexdump(const char *p, int len);
-void     g_memset(void *ptr, int val, int size);
-void     g_memcpy(void *d_ptr, const void *s_ptr, int size);
-void     g_memmove(void *d_ptr, const void *s_ptr, int size);
 int      g_getchar(void);
 int      g_tcp_set_no_delay(int sck);
 int      g_tcp_set_keepalive(int sck);
@@ -178,6 +177,8 @@ const char *
 g_sck_get_peer_description(int sck,
                            char *desc, unsigned int bytes);
 void     g_sleep(int msecs);
+int      g_pipe(int fd[2]);
+
 tintptr  g_create_wait_obj(const char *name);
 tintptr  g_create_wait_obj_from_socket(tintptr socket, int write);
 void     g_delete_wait_obj_from_socket(tintptr wait_obj);
@@ -213,6 +214,19 @@ int      g_file_read(int fd, char *ptr, int len);
 int      g_file_write(int fd, const char *ptr, int len);
 int      g_file_seek(int fd, int offset);
 int      g_file_lock(int fd, int start, int len);
+int      g_file_duplicate_on(int fd, int target_fd);
+int      g_file_get_cloexec(int fd);
+int      g_file_set_cloexec(int fd, int status);
+/**
+ * Get a list of open file descriptors
+ *
+ * @param min Min FD to consider
+ * @param max Max FD to consider (+1), or -1 for no limit
+ * @result Array of file descriptors, in ascending order.
+ *
+ * Call delete_list() on the result when you've finished with it.
+ */
+struct list *g_get_open_fds(int min, int max);
 int      g_chmod_hex(const char *filename, int flags);
 int      g_umask_hex(int flags);
 int      g_chown(const char *name, int uid, int gid);
@@ -273,7 +287,7 @@ int      g_setlogin(const char *name);
  */
 int      g_set_allusercontext(int uid);
 #endif
-int      g_waitchild(void);
+int      g_waitchild(struct exit_status *e);
 int      g_waitpid(int pid);
 struct exit_status g_waitpid_status(int pid);
 void     g_clearenv(void);
@@ -308,5 +322,12 @@ int      g_tcp6_bind_address(int sck, const char *port, const char *address);
     (struct_type *) malloc(sizeof(struct_type) * (n_structs))
 #define g_new0(struct_type, n_structs) \
     (struct_type *) calloc((n_structs), sizeof(struct_type))
+
+/* remove these when no longer used */
+#define g_malloc(_size, _zero) (_zero ? calloc(1, _size) : malloc(_size))
+#define g_free free
+#define g_memset memset
+#define g_memcpy memcpy
+#define g_memmove memmove
 
 #endif
