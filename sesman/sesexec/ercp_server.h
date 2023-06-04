@@ -1,7 +1,7 @@
 /**
  * xrdp: A Remote Desktop Protocol server.
  *
- * Copyright (C) Laxmikant Rashinkar 2013 LK.Rashinkar@gmail.com
+ * Copyright (C) Jay Sorg 2004-2023
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,24 @@
  * limitations under the License.
  */
 
-#ifndef FIFO_H
-#define FIFO_H
+/**
+ *
+ * @file ercp_server.h
+ * @brief ercp (executive run-time control protocol) server function
+ * @author Matt Burt
+ *
+ */
 
-/* FIFO implementation to store a pointer to a user struct */
+#ifndef ERCP_SERVER_H
+#define ERCP_SERVER_H
 
-typedef struct fifo
-{
-    long *user_data;
-    int   rd_ptr;
-    int   wr_ptr;
-    int   entries;
-} FIFO;
+/**
+ *
+ * @brief Processes an ERCP message
+ * @param self The ERCP transport the message is coming in on
+ *
+ */
+int
+ercp_server(struct trans *self);
 
-int   fifo_init(FIFO *fp, int num_entries);
-int   fifo_deinit(FIFO *fp);
-int   fifo_is_empty(FIFO *fp);
-int   fifo_insert(FIFO *fp, void *data);
-void *fifo_remove(FIFO *fp);
-void *fifo_peek(FIFO *fp);
-
-#endif // FIFO_H
+#endif // ERCP_SERVER_H

@@ -70,6 +70,7 @@
 #define SESMAN_CFG_SEC_RESTRICT_OUTBOUND_CLIPBOARD "RestrictOutboundClipboard"
 #define SESMAN_CFG_SEC_RESTRICT_INBOUND_CLIPBOARD  "RestrictInboundClipboard"
 #define SESMAN_CFG_SEC_ALLOW_ALTERNATE_SHELL       "AllowAlternateShell"
+#define SESMAN_CFG_SEC_XORG_NO_NEW_PRIVILEGES      "XorgNoNewPrivileges"
 
 #define SESMAN_CFG_SESSIONS          "Sessions"
 #define SESMAN_CFG_SESS_MAX          "MaxSessions"
@@ -77,6 +78,7 @@
 #define SESMAN_CFG_SESS_IDLE_LIMIT   "IdleTimeLimit"
 #define SESMAN_CFG_SESS_DISC_LIMIT   "DisconnectedTimeLimit"
 #define SESMAN_CFG_SESS_X11DISPLAYOFFSET "X11DisplayOffset"
+#define SESMAN_CFG_SESS_MAX_DISPLAY  "MaxDisplayNumber"
 
 #define SESMAN_CFG_SESS_POLICY_S "Policy"
 #define SESMAN_CFG_SESS_POLICY_DFLT_S "Default"
@@ -309,6 +311,7 @@ config_read_security(int file, struct config_security *sc,
     sc->restrict_outbound_clipboard = 0;
     sc->restrict_inbound_clipboard = 0;
     sc->allow_alternate_shell = 1;
+    sc->xorg_no_new_privileges = 1;
 
     file_read_section(file, SESMAN_CFG_SECURITY, param_n, param_v);
 
@@ -382,6 +385,11 @@ config_read_security(int file, struct config_security *sc,
                 g_text2bool((char *)list_get_item(param_v, i));
         }
 
+        if (0 == g_strcasecmp(buf, SESMAN_CFG_SEC_XORG_NO_NEW_PRIVILEGES))
+        {
+            sc->xorg_no_new_privileges =
+                g_text2bool((char *)list_get_item(param_v, i));
+        }
     }
 
     return 0;
@@ -410,6 +418,8 @@ config_read_sessions(int file, struct config_sessions *se, struct list *param_n,
 
     /* setting defaults */
     se->x11_display_offset = 10;
+    // https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml`
+    se->max_display_number = 63;
     se->max_sessions = 0;
     se->max_idle_time = 0;
     se->max_disc_time = 0;
@@ -425,12 +435,29 @@ config_read_sessions(int file, struct config_sessions *se, struct list *param_n,
 
         if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_X11DISPLAYOFFSET))
         {
-            se->x11_display_offset = g_atoi(value);
+            int x11off = g_atoi(value);
+            if (x11off >= 0)
+            {
+                se->x11_display_offset = x11off;
+            }
+        }
+
+        else if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_MAX_DISPLAY))
+        {
+            int mdn = g_atoi(value);
+            if (mdn > 0)
+            {
+                se->max_display_number = mdn;
+            }
         }
 
         else if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_MAX))
         {
-            se->max_sessions = g_atoi(value);
+            int sm = g_atoi(value);
+            if (sm >= 0)
+            {
+                se->max_sessions = sm;
+            }
         }
 
         else if (0 == g_strcasecmp(buf, SESMAN_CFG_SESS_KILL_DISC))
@@ -563,7 +590,7 @@ config_read(const char *sesman_ini)
         if ((cfg->sesman_ini = g_strdup(sesman_ini)) != NULL)
         {
             int fd;
-            if ((fd = g_file_open_ex(cfg->sesman_ini, 1, 0, 0, 0)) != -1)
+            if ((fd = g_file_open_ro(cfg->sesman_ini)) != -1)
             {
                 struct list *sec;
                 struct list *param_n;
@@ -650,6 +677,9 @@ config_dump(struct config_sesman *config)
     g_writeln("    MaxLoginRetry:             %d", sc->login_retry);
     g_writeln("    AlwaysGroupCheck:          %d", sc->ts_always_group_check);
     g_writeln("    AllowAlternateShell:       %d", sc->allow_alternate_shell);
+#ifdef HAVE_SYS_PRCTL_H
+    g_writeln("    XorgNoNewPrivileges:       %d", sc->xorg_no_new_privileges);
+#endif
     sesman_clip_restrict_mask_to_string(sc->restrict_outbound_clipboard,
                                         restrict_s, sizeof(restrict_s));
     g_writeln("    RestrictOutboundClipboard: %s", restrict_s);

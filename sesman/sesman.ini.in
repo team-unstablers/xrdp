@@ -39,6 +39,11 @@ RestrictOutboundClipboard=none
 RestrictInboundClipboard=none
 ; Set to 'no' to prevent users from logging in with alternate shells
 #AllowAlternateShell=true
+; On Linux systems, the Xorg X11 server is normally invoked using
+; no_new_privs to avoid problems if the executable is suid. This may,
+; however, interfere with the use of security modules such as AppArmor.
+; Leave this unset unless you need to disable it.
+#XorgNoNewPrivileges=true
 
 [Sessions]
 ;; X11DisplayOffset - x11 display number offset
@@ -50,6 +55,15 @@ X11DisplayOffset=10
 ; Type: integer
 ; Default: 0
 MaxSessions=50
+
+;; MaxDisplayNumer - maximum number considered for an X display
+; Type: integer
+; Default: 63
+;
+; IANA only allocates TCP ports up to 6063 for X servers. If you are not
+; allowing TCP connections to your X servers you may safely increase this
+; number.
+#MaxDisplayNumber=63
 
 ;; KillDisconnected - kill disconnected sessions
 ; Type: boolean

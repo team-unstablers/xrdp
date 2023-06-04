@@ -53,6 +53,10 @@
 #include <sys/stat.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#if defined(HAVE_SYS_PRCTL_H)
+#include <sys/prctl.h>
+#endif
+#include <sys/mman.h>
 #include <dlfcn.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -133,7 +137,7 @@ g_rm_temp_dir(void)
 
 /*****************************************************************************/
 int
-g_mk_socket_path(const char *app_name)
+g_mk_socket_path(void)
 {
     if (!g_directory_exist(XRDP_SOCKET_PATH))
     {
@@ -176,8 +180,6 @@ g_init(const char *app_name)
         /* use en_US.UTF-8 instead if not available */
         setlocale(LC_CTYPE, "en_US.UTF-8");
     }
-
-    g_mk_socket_path(app_name);
 }
 
 /*****************************************************************************/
@@ -2088,24 +2090,14 @@ g_memcmp(const void *s1, const void *s2, int len)
 /*****************************************************************************/
 /* returns -1 on error, else return handle or file descriptor */
 int
-g_file_open(const char *file_name)
+g_file_open_rw(const char *file_name)
 {
 #if defined(_WIN32)
     return (int)CreateFileA(file_name, GENERIC_READ | GENERIC_WRITE,
                             FILE_SHARE_READ | FILE_SHARE_WRITE,
                             0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 #else
-    int rv;
-
-    rv =  open(file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-
-    if (rv == -1)
-    {
-        /* can't open read / write, try to open read only */
-        rv =  open(file_name, O_RDONLY);
-    }
-
-    return rv;
+    return open(file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 #endif
 }
 
@@ -2148,6 +2140,14 @@ g_file_open_ex(const char *file_name, int aread, int awrite,
 }
 
 /*****************************************************************************/
+/* returns -1 on error, else return handle or file descriptor */
+int
+g_file_open_ro(const char *file_name)
+{
+    return g_file_open_ex(file_name, 1, 0, 0, 0);
+}
+
+/*****************************************************************************/
 /* returns error, always 0 */
 int
 g_file_close(int fd)
@@ -2158,6 +2158,13 @@ g_file_close(int fd)
     close(fd);
 #endif
     return 0;
+}
+
+/*****************************************************************************/
+int
+g_file_is_open(int fd)
+{
+    return (fcntl(fd, F_GETFD) >= 0);
 }
 
 /*****************************************************************************/
@@ -2345,6 +2352,37 @@ g_get_open_fds(int min, int max)
 nomem:
     list_delete(result);
     return NULL;
+}
+
+/*****************************************************************************/
+int
+g_file_map(int fd, int aread, int awrite, size_t length, void **addr)
+{
+    int prot = 0;
+    void *laddr;
+
+    if (aread)
+    {
+        prot |= PROT_READ;
+    }
+    if (awrite)
+    {
+        prot |= PROT_WRITE;
+    }
+    laddr = mmap(NULL, length, prot, MAP_SHARED, fd, 0);
+    if (laddr == MAP_FAILED)
+    {
+        return 1;
+    }
+    *addr = laddr;
+    return 0;
+}
+
+/*****************************************************************************/
+int
+g_munmap(void *addr, size_t length)
+{
+    return munmap(addr, length);
 }
 
 /*****************************************************************************/
@@ -2547,6 +2585,14 @@ g_directory_exist(const char *dirname)
     }
 
 #endif
+}
+
+/*****************************************************************************/
+/* returns boolean, non zero if the file exists  and is a readable executable */
+int
+g_executable_exist(const char *exename)
+{
+    return access(exename, R_OK | X_OK) == 0;
 }
 
 /*****************************************************************************/
@@ -2866,7 +2912,6 @@ g_execlp3(const char *a1, const char *a2, const char *a3)
         "returned errno: %d, description: %s",
         a1, args_str, g_get_errno(), g_get_strerror());
 
-    g_mk_socket_path(0);
     return rv;
 #endif
 }
@@ -2976,11 +3021,7 @@ g_fork(void)
 
     rv = fork();
 
-    if (rv == 0) /* child */
-    {
-        g_mk_socket_path(0);
-    }
-    else if (rv == -1) /* error */
+    if (rv == -1) /* error */
     {
         LOG(LOG_LEVEL_ERROR,
             "Process fork failed with errno: %d, description: %s",
@@ -3143,7 +3184,7 @@ g_waitchild(struct exit_status *e)
     e->reason = E_XR_UNEXPECTED;
     e->val = 0;
 
-    rv = waitpid(0, &wstat, WNOHANG);
+    rv = waitpid(-1, &wstat, WNOHANG);
 
     if (rv == -1)
     {
@@ -3236,6 +3277,24 @@ g_waitpid_status(int pid)
 
 #endif
     return exit_status;
+}
+
+/*****************************************************************************/
+int
+g_setpgid(int pid, int pgid)
+{
+    int rv = setpgid(pid, pgid);
+    if (rv < 0)
+    {
+        if (pid == 0)
+        {
+            pid = getpid();
+        }
+        LOG(LOG_LEVEL_ERROR, "Can't set process group ID of %d to %d [%s]",
+            pid, pgid, g_get_strerror());
+    }
+
+    return rv;
 }
 
 /*****************************************************************************/
@@ -3928,5 +3987,21 @@ g_tcp6_bind_address(int sck, const char *port, const char *address)
     return rv;
 #else
     return -1;
+#endif
+}
+
+/*****************************************************************************/
+/* returns error, zero is success, non zero is error */
+/* only works in linux */
+int
+g_no_new_privs(void)
+{
+#if defined(HAVE_SYS_PRCTL_H) && defined(PR_SET_NO_NEW_PRIVS)
+    /*
+     * PR_SET_NO_NEW_PRIVS requires Linux kernel 3.5 and newer.
+     */
+    return prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+#else
+    return 0;
 #endif
 }

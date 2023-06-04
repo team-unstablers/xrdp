@@ -53,7 +53,7 @@ struct list;
 #define g_close_wait_obj g_delete_wait_obj
 
 int      g_rm_temp_dir(void);
-int      g_mk_socket_path(const char *app_name);
+int      g_mk_socket_path(void);
 void     g_init(const char *app_name);
 void     g_deinit(void);
 void g_printf(const char *format, ...) printflike(1, 2);
@@ -206,14 +206,25 @@ int      g_obj_wait(tintptr *read_objs, int rcount, tintptr *write_objs,
 void     g_random(char *data, int len);
 int      g_abs(int i);
 int      g_memcmp(const void *s1, const void *s2, int len);
-int      g_file_open(const char *file_name);
+int      g_file_open_rw(const char *file_name);
 int      g_file_open_ex(const char *file_name, int aread, int awrite,
                         int acreate, int atrunc);
+int      g_file_open_ro(const char *file_name);
 int      g_file_close(int fd);
+/**
+ * Returns 1 if a file is open (i.e. the file descriptor is valid)
+ * @param fd File descriptor
+ * @return 1 for file open, 0 for not open
+ */
+int      g_file_is_open(int fd);
 int      g_file_read(int fd, char *ptr, int len);
 int      g_file_write(int fd, const char *ptr, int len);
 int      g_file_seek(int fd, int offset);
 int      g_file_lock(int fd, int start, int len);
+int
+g_file_map(int fd, int aread, int awrite, size_t length, void **addr);
+int
+g_munmap(void *addr, size_t length);
 int      g_file_duplicate_on(int fd, int target_fd);
 int      g_file_get_cloexec(int fd);
 int      g_file_set_cloexec(int fd, int status);
@@ -236,6 +247,7 @@ int      g_set_current_dir(const char *dirname);
 int      g_file_exist(const char *filename);
 int      g_file_readable(const char *filename);
 int      g_directory_exist(const char *dirname);
+int      g_executable_exist(const char *dirname);
 int      g_create_dir(const char *dirname);
 int      g_create_path(const char *path);
 int      g_remove_dir(const char *dirname);
@@ -290,6 +302,15 @@ int      g_set_allusercontext(int uid);
 int      g_waitchild(struct exit_status *e);
 int      g_waitpid(int pid);
 struct exit_status g_waitpid_status(int pid);
+/*
+ * Sets the process group ID of the indicated process to the specified value.
+ * (POSIX.1)
+ *
+ * Errors are logged.
+ *
+ * May do nothing if process groups are not supported
+ */
+int      g_setpgid(int pid, int pgid);
 void     g_clearenv(void);
 int      g_setenv(const char *name, const char *value, int rewrite);
 char    *g_getenv(const char *name);
@@ -316,6 +337,7 @@ int      g_tcp4_socket(void);
 int      g_tcp4_bind_address(int sck, const char *port, const char *address);
 int      g_tcp6_socket(void);
 int      g_tcp6_bind_address(int sck, const char *port, const char *address);
+int      g_no_new_privs(void);
 
 /* glib-style wrappers */
 #define g_new(struct_type, n_structs) \
