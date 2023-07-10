@@ -61,7 +61,6 @@ SUBDIRS = \
   xrdp \
   fontutils \
   keygen \
-  waitforx \
   docs \
   instfiles \
   genkeymap \
