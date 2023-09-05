@@ -128,7 +128,12 @@ fi
             # CFGDIR is needed for cppcheck before 1.86
             make_args="FILESDIR=$FILESDIR PREFIX=$FILESDIR CFGDIR=$FILESDIR"
             ;;
-        *)  make_args="FILESDIR=$FILESDIR PREFIX=$FILESDIR USE_Z3=yes"
+        2.8 | 2.9 | 2.1*)
+            # Cppcheck 2.8 removed the dependency on z3
+            make_args="FILESDIR=$FILESDIR PREFIX=$FILESDIR"
+            ;;
+        2.*)
+            make_args="FILESDIR=$FILESDIR PREFIX=$FILESDIR USE_Z3=yes"
             # Check that the Z3 development files appear to be installed
             # before trying to create z3_version.h. Otherwise we may
             # mislead the user as to what needs to be done.
@@ -138,7 +143,16 @@ fi
             if [ ! -f /usr/include/z3_version.h ]; then
                 create_z3_version_h
             fi
+            ;;
     esac
+
+    # Use all available CPUs
+    if [ -f /proc/cpuinfo ]; then
+        cpus=`grep ^processor /proc/cpuinfo | wc -l`
+        if [ -n "$cpus" ]; then
+            make_args="$make_args -j $cpus"
+        fi
+    fi
 
     echo "Making cppcheck..."
     # CFGDIR is needed for cppcheck before 1.86
