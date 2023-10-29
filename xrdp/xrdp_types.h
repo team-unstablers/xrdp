@@ -174,7 +174,14 @@ struct xrdp_mod
     int (*server_set_pointer_large)(struct xrdp_mod *v, int x, int y,
                                     char *data, char *mask, int bpp,
                                     int width, int height);
-    tintptr server_dumby[100 - 47]; /* align, 100 minus the number of server
+    int (*server_paint_rects_ex)(struct xrdp_mod *v,
+                                 int num_drects, short *drects,
+                                 int num_crects, short *crects,
+                                 char *data, int left, int top,
+                                 int width, int height,
+                                 int flags, int frame_id,
+                                 void *shmem_ptr, int shmem_bytes);
+    tintptr server_dumby[100 - 48]; /* align, 100 minus the number of server
                                      functions above */
     /* common */
     tintptr handle; /* pointer to self as int */
@@ -394,6 +401,7 @@ struct xrdp_mm
     int (*mod_exit)(struct xrdp_mod *);
     struct xrdp_mod *mod; /* module interface */
     int display; /* 10 for :10.0, 11 for :11.0, etc */
+    int uid; /* UID for a successful login, -1 otherwise */
     struct guid guid; /* GUID for the session, or all zeros  */
     int code; /* 0=Xvnc session, 20=xorg driver mode */
     struct xrdp_encoder *encoder;
@@ -641,7 +649,7 @@ struct xrdp_bitmap
     int crc16;
 };
 
-#define NUM_FONTS 0x4e00
+#define MAX_FONT_CHARS 0x4e00
 #define DEFAULT_FONT_NAME "sans-10.fv1"
 #define DEFAULT_FONT_PIXEL_SIZE 16
 #define DEFAULT_FV1_SELECT "130:sans-18.fv1,0:" DEFAULT_FONT_NAME
@@ -662,7 +670,11 @@ struct xrdp_bitmap
 struct xrdp_font
 {
     struct xrdp_wm *wm;
-    struct xrdp_font_char font_items[NUM_FONTS];
+    // Font characters, accessed by Unicode codepoint. The first 32
+    // entries are unused.
+    struct xrdp_font_char chars[MAX_FONT_CHARS];
+    unsigned int char_count; // # elements in above array
+    struct xrdp_font_char *default_char; // Pointer into above array
     char name[32];
     int size;
     /** Body height in pixels */

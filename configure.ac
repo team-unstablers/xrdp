@@ -62,12 +62,6 @@ AC_ARG_WITH([socketdir],
                   [], [with_socketdir="$runstatedir/xrdp"])
 AC_SUBST([socketdir], [$with_socketdir])
 
-AC_ARG_WITH([sesmanruntimedir],
-  [AS_HELP_STRING([--with-sesmanruntimedir=DIR],
-                  [Use directory for sesman runtime data (default: RUNSTATEDIR/xrdp-sesman)])],
-                  [], [with_sesmanruntimedir="$runstatedir/xrdp-sesman"])
-AC_SUBST([sesmanruntimedir], [$with_sesmanruntimedir])
-
 AC_ARG_WITH([systemdsystemunitdir],
         AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files, no to disable]),
         [], [
@@ -217,7 +211,10 @@ AM_COND_IF([DEVEL_DEBUG],
 AC_SEARCH_LIBS([setusercontext], [util])
 
 # Define HAVE_XXXXX macros for some system functions
-AC_CHECK_FUNCS([setusercontext])
+AC_CHECK_FUNCS([setusercontext getgrouplist])
+
+# The type used by getgrouplist() is the same type used by getgroups()
+AC_TYPE_GETGROUPS
 
 # Don't fail without working nasm if rfxcodec is not enabled
 if test "x$enable_rfxcodec" != xyes; then
@@ -407,10 +404,16 @@ fi
 if test "x$enable_vsock" = "xyes"
 then
   enable_vsock=yes
-  AC_CHECK_HEADERS([linux/socket.h linux/vm_sockets.h],
-                   [AC_DEFINE([XRDP_ENABLE_VSOCK], 1, [Enable AF_VSOCK])],
-                   [],
-                   [#include <sys/socket.h>])
+  if test "x$freebsd" = "xyes"
+  then
+    # Determine if we have AF_HYPERV defined (FreeBSD 13+)
+    AC_CHECK_DECL([AF_HYPERV], [AC_DEFINE([XRDP_ENABLE_VSOCK], 1, [Enable AF_HYPERV])], [], [#include <sys/socket.h>])
+  else
+    AC_CHECK_HEADERS([linux/socket.h linux/vm_sockets.h],
+                    [AC_DEFINE([XRDP_ENABLE_VSOCK], 1, [Enable AF_VSOCK])],
+                    [],
+                    [#include <sys/socket.h>])
+  fi
 fi
 
 if test "x$enable_ipv6only" = "xyes"
@@ -646,7 +649,6 @@ echo "  pamconfdir              $pamconfdir"
 echo "  localstatedir           $localstatedir"
 echo "  runstatedir             $runstatedir"
 echo "  socketdir               $socketdir"
-echo "  sesmanruntimedir        $sesmanruntimedir"
 echo ""
 echo "  unit tests performable  $perform_unit_tests"
 echo ""

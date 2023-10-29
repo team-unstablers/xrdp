@@ -1118,9 +1118,10 @@ process_pcm_message(int id, int size, struct stream *s)
                 char *buf = (char *) g_malloc(g_bbuf_size, 0);
                 if (buf != NULL)
                 {
+                    int i;
                     silence_start_time = g_time3();
                     sending_silence = 1;
-                    for (int i = 0; i < send_silence_times; i++)
+                    for (i = 0; i < send_silence_times; i++)
                     {
                         g_memset(buf, 0, g_bbuf_size);
                         sound_send_wave_data_chunk(buf, g_bbuf_size);
@@ -1893,11 +1894,11 @@ sound_sndsrvr_source_data_in(struct trans *trans)
 static int
 sound_start_source_listener(void)
 {
-    char port[1024];
+    char port[XRDP_SOCKETS_MAXPATH];
 
     g_audio_l_trans_in = trans_create(TRANS_MODE_UNIX, 128 * 1024, 8192);
     g_audio_l_trans_in->is_term = g_is_term;
-    g_snprintf(port, 255, CHANSRV_PORT_IN_STR, g_display_num);
+    g_snprintf(port, sizeof(port), CHANSRV_PORT_IN_STR, g_getuid(), g_display_num);
     g_audio_l_trans_in->trans_conn_in = sound_sndsrvr_source_conn_in;
     if (trans_listen(g_audio_l_trans_in, port) != 0)
     {
@@ -1912,11 +1913,11 @@ sound_start_source_listener(void)
 static int
 sound_start_sink_listener(void)
 {
-    char port[1024];
+    char port[XRDP_SOCKETS_MAXPATH];
 
     g_audio_l_trans_out = trans_create(TRANS_MODE_UNIX, 128 * 1024, 8192);
     g_audio_l_trans_out->is_term = g_is_term;
-    g_snprintf(port, 255, CHANSRV_PORT_OUT_STR, g_display_num);
+    g_snprintf(port, sizeof(port), CHANSRV_PORT_OUT_STR, g_getuid(), g_display_num);
     g_audio_l_trans_out->trans_conn_in = sound_sndsrvr_sink_conn_in;
     if (trans_listen(g_audio_l_trans_out, port) != 0)
     {

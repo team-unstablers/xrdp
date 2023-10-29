@@ -61,6 +61,8 @@ xrdp_mm_create(struct xrdp_wm *owner)
     self->resize_queue = list_create();
     self->resize_queue->auto_free = 1;
 
+    self->uid = -1; /* Never good to default UIDs to 0 */
+
     pid = g_getpid();
     /* setup wait objects for signalling */
     g_snprintf(buf, sizeof(buf), "xrdp_%8.8x_resize_ready", pid);
@@ -423,6 +425,7 @@ xrdp_mm_setup_mod1(struct xrdp_mm *self)
             self->mod->server_paint_rects = server_paint_rects;
             self->mod->server_session_info = server_session_info;
             self->mod->server_set_pointer_large = server_set_pointer_large;
+            self->mod->server_paint_rects_ex = server_paint_rects_ex;
             self->mod->si = &(self->wm->session->si);
         }
     }
@@ -468,11 +471,12 @@ xrdp_mm_setup_mod2(struct xrdp_mm *self)
         {
             if (self->code == XVNC_SESSION_CODE)
             {
-                g_snprintf(text, 255, "%d", 5900 + self->display);
+                g_snprintf(text, sizeof(text), "%d", 5900 + self->display);
             }
             else if (self->code == XORG_SESSION_CODE)
             {
-                g_snprintf(text, 255, XRDP_X11RDP_STR, self->display);
+                g_snprintf(text, sizeof(text), XRDP_X11RDP_STR,
+                           self->uid, self->display);
             }
             else
             {
@@ -2177,7 +2181,8 @@ xrdp_mm_process_login_response(struct xrdp_mm *self)
 
     self->mmcs_expecting_msg = 0;
 
-    rv = scp_get_login_response(self->sesman_trans, &login_result, &server_closed);
+    rv = scp_get_login_response(self->sesman_trans, &login_result,
+                                &server_closed, &self->uid);
     if (rv == 0)
     {
         if (login_result != E_SCP_LOGIN_OK)
@@ -2345,11 +2350,16 @@ cleanup_states(struct xrdp_mm *self)
  * @param value assigned to chansrvport
  * @param dest Output buffer
  * @param dest_size Total size of output buffer, including terminator space
+ * @param uid of destination
+ *
+ * Pass in dest of NULL, dest_size of 0 and uid of -1 to simply see if
+ * the string parses OK.
+ *
  * @return 0 for success
  */
 
 static int
-parse_chansrvport(const char *value, char *dest, int dest_size)
+parse_chansrvport(const char *value, char *dest, int dest_size, int uid)
 {
     int rv = 0;
 
@@ -2372,7 +2382,7 @@ parse_chansrvport(const char *value, char *dest, int dest_size)
         }
         else
         {
-            g_snprintf(dest, dest_size, XRDP_CHANSRV_STR, g_atoi(p));
+            g_snprintf(dest, dest_size, XRDP_CHANSRV_STR, uid, g_atoi(p));
         }
     }
     else
@@ -2560,7 +2570,7 @@ xrdp_mm_connect(struct xrdp_mm *self)
     {
         const char *csp = xrdp_mm_get_value(self, "chansrvport");
         /* It's defined, but is it a valid string? */
-        if (csp != NULL && parse_chansrvport(csp, NULL, 0) == 0)
+        if (csp != NULL && parse_chansrvport(csp, NULL, 0, -1) == 0)
         {
             self->use_chansrv = 1;
         }
@@ -2651,6 +2661,7 @@ xrdp_mm_connect_sm(struct xrdp_mm *self)
                                     "access control check was successful");
                     // No reply needed for this one
                     status = scp_send_logout_request(self->sesman_trans);
+                    self->uid = -1;
                 }
 
                 if (status == 0 && self->use_sesman)
@@ -2722,20 +2733,21 @@ xrdp_mm_connect_sm(struct xrdp_mm *self)
             {
                 if (self->use_chansrv)
                 {
-                    char portbuff[256];
+                    char portbuff[XRDP_SOCKETS_MAXPATH];
 
                     xrdp_wm_log_msg(self->wm, LOG_LEVEL_INFO,
                                     "Connecting to chansrv");
                     if (self->use_sesman)
                     {
                         g_snprintf(portbuff, sizeof(portbuff),
-                                   XRDP_CHANSRV_STR, self->display);
+                                   XRDP_CHANSRV_STR, self->uid, self->display);
                     }
                     else
                     {
                         const char *cp = xrdp_mm_get_value(self, "chansrvport");
                         portbuff[0] = '\0';
-                        parse_chansrvport(cp, portbuff, sizeof(portbuff));
+                        parse_chansrvport(cp, portbuff, sizeof(portbuff),
+                                          self->uid);
 
                     }
                     xrdp_mm_update_allowed_channels(self);
@@ -2927,6 +2939,7 @@ xrdp_mm_update_module_frame_ack(struct xrdp_mm *self)
 static int
 xrdp_mm_process_enc_done(struct xrdp_mm *self)
 {
+    XRDP_ENC_DATA *enc;
     XRDP_ENC_DATA_DONE *enc_done;
     int x;
     int y;
@@ -2975,21 +2988,26 @@ xrdp_mm_process_enc_done(struct xrdp_mm *self)
         /* free enc_done */
         if (enc_done->last)
         {
+            enc = enc_done->enc;
             LOG_DEVEL(LOG_LEVEL_DEBUG, "xrdp_mm_process_enc_done: last set");
             if (self->wm->client_info->use_frame_acks == 0)
             {
                 self->mod->mod_frame_ack(self->mod,
-                                         enc_done->enc->flags,
-                                         enc_done->enc->frame_id);
+                                         enc->flags,
+                                         enc->frame_id);
             }
             else
             {
-                self->encoder->frame_id_server = enc_done->enc->frame_id;
+                self->encoder->frame_id_server = enc->frame_id;
                 xrdp_mm_update_module_frame_ack(self);
             }
-            g_free(enc_done->enc->drects);
-            g_free(enc_done->enc->crects);
-            g_free(enc_done->enc);
+            g_free(enc->drects);
+            g_free(enc->crects);
+            if (enc->shmem_ptr != NULL)
+            {
+                g_munmap(enc->shmem_ptr, enc->shmem_bytes);
+            }
+            g_free(enc);
         }
         g_free(enc_done->comp_pad_data);
         g_free(enc_done);
@@ -3358,6 +3376,19 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
                    int num_crects, short *crects, char *data, int width,
                    int height, int flags, int frame_id)
 {
+    return server_paint_rects_ex(mod, num_drects, drects, num_crects, crects,
+                                 data, 0, 0, width, height, flags, frame_id,
+                                 NULL, 0);
+}
+
+/*****************************************************************************/
+int
+server_paint_rects_ex(struct xrdp_mod *mod, int num_drects, short *drects,
+                      int num_crects, short *crects, char *data,
+                      int left, int top, int width, int height,
+                      int flags, int frame_id,
+                      void *shmem_ptr, int shmem_bytes)
+{
     struct xrdp_wm *wm;
     struct xrdp_mm *mm;
     struct xrdp_painter *p;
@@ -3377,6 +3408,10 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
         enc_data = (XRDP_ENC_DATA *) g_malloc(sizeof(XRDP_ENC_DATA), 1);
         if (enc_data == 0)
         {
+            if (shmem_ptr != NULL)
+            {
+                g_munmap(shmem_ptr, shmem_bytes);
+            }
             return 1;
         }
 
@@ -3384,6 +3419,10 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
                            g_malloc(sizeof(short) * num_drects * 4, 0);
         if (enc_data->drects == 0)
         {
+            if (shmem_ptr != NULL)
+            {
+                g_munmap(shmem_ptr, shmem_bytes);
+            }
             g_free(enc_data);
             return 1;
         }
@@ -3392,6 +3431,10 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
                            g_malloc(sizeof(short) * num_crects * 4, 0);
         if (enc_data->crects == 0)
         {
+            if (shmem_ptr != NULL)
+            {
+                g_munmap(shmem_ptr, shmem_bytes);
+            }
             g_free(enc_data->drects);
             g_free(enc_data);
             return 1;
@@ -3404,10 +3447,14 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
         enc_data->num_drects = num_drects;
         enc_data->num_crects = num_crects;
         enc_data->data = data;
+        enc_data->left = left;
+        enc_data->top = top;
         enc_data->width = width;
         enc_data->height = height;
         enc_data->flags = flags;
         enc_data->frame_id = frame_id;
+        enc_data->shmem_ptr = shmem_ptr;
+        enc_data->shmem_bytes = shmem_bytes;
         if (width == 0 || height == 0)
         {
             LOG_DEVEL(LOG_LEVEL_WARNING, "server_paint_rects: error");
@@ -3442,6 +3489,10 @@ server_paint_rects(struct xrdp_mod *mod, int num_drects, short *drects,
     }
     xrdp_bitmap_delete(b);
     mm->mod->mod_frame_ack(mm->mod, flags, frame_id);
+    if (shmem_ptr != NULL)
+    {
+        g_munmap(shmem_ptr, shmem_bytes);
+    }
     return 0;
 }
 

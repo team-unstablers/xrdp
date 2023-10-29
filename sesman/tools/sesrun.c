@@ -42,6 +42,11 @@
 
 #include "tools_common.h"
 
+// cppcheck doesn't always set this macro to something in double-quotes
+#if defined(__cppcheck__)
+#undef PACKAGE_VERSION
+#endif
+
 #if !defined(PACKAGE_VERSION)
 #define PACKAGE_VERSION "???"
 #endif
@@ -455,7 +460,7 @@ handle_login_response(struct trans *t, int *server_closed)
     }
     else
     {
-        rv = scp_get_login_response(t, &login_result, server_closed);
+        rv = scp_get_login_response(t, &login_result, server_closed, NULL);
         if (rv == 0)
         {
             if (login_result != E_SCP_LOGIN_OK)

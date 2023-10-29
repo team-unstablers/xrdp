@@ -70,14 +70,12 @@ struct config_security
      * @var ts_users
      * @brief Terminal Server Users group
      */
-    int ts_users_enable;
-    int ts_users;
+    char *ts_users;
     /**
      * @var ts_admins
      * @brief Terminal Server Administrators group
      */
-    int ts_admins_enable;
-    int ts_admins;
+    char *ts_admins;
     /**
      * @var ts_always_group_check
      * @brief if the Groups are not found deny access
@@ -109,6 +107,12 @@ struct config_security
      * @brief if the Xorg X11 server should be started with no_new_privs (Linux only)
      */
     int xorg_no_new_privileges;
+
+    /*
+     * @var session_sockdir_group
+     * @brief Group to have read access to the session sockdirs
+     */
+    char *session_sockdir_group;
 };
 
 /**

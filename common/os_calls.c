@@ -42,7 +42,18 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
 #include <linux/vm_sockets.h>
+#elif defined(__FreeBSD__)
+// sockaddr_hvs is not available outside the kernel for whatever reason
+struct sockaddr_hvs
+{
+    unsigned char sa_len;
+    sa_family_t   sa_family;
+    unsigned int  hvs_port;
+    unsigned char hvs_zero[sizeof(struct sockaddr) -  sizeof(sa_family_t) - sizeof(unsigned char) - sizeof(unsigned int)];
+};
+#endif
 #endif
 #include <poll.h>
 #include <sys/un.h>
@@ -124,7 +135,11 @@ union sock_info
 #endif
     struct sockaddr_un sa_un;
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
     struct sockaddr_vm sa_vm;
+#elif defined(__FreeBSD__)
+    struct sockaddr_hvs sa_hvs;
+#endif
 #endif
 };
 
@@ -132,28 +147,6 @@ union sock_info
 int
 g_rm_temp_dir(void)
 {
-    return 0;
-}
-
-/*****************************************************************************/
-int
-g_mk_socket_path(void)
-{
-    if (!g_directory_exist(XRDP_SOCKET_PATH))
-    {
-        if (!g_create_path(XRDP_SOCKET_PATH"/"))
-        {
-            /* if failed, still check if it got created by someone else */
-            if (!g_directory_exist(XRDP_SOCKET_PATH))
-            {
-                LOG(LOG_LEVEL_ERROR,
-                    "g_mk_socket_path: g_create_path(%s) failed",
-                    XRDP_SOCKET_PATH);
-                return 1;
-            }
-        }
-        g_chmod_hex(XRDP_SOCKET_PATH, 0x1777);
-    }
     return 0;
 }
 
@@ -580,8 +573,18 @@ int
 g_sck_vsock_socket(void)
 {
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
+    LOG(LOG_LEVEL_DEBUG, "g_sck_vsock_socket: returning Linux vsock socket");
     return socket(PF_VSOCK, SOCK_STREAM, 0);
+#elif defined(__FreeBSD__)
+    LOG(LOG_LEVEL_DEBUG, "g_sck_vsock_socket: returning FreeBSD Hyper-V socket");
+    return socket(AF_HYPERV, SOCK_STREAM, 0); // docs say to use AF_HYPERV here - PF_HYPERV does not exist
 #else
+    LOG(LOG_LEVEL_DEBUG, "g_sck_vsock_socket: vsock enabled at compile time, but platform is unsupported");
+    return -1;
+#endif
+#else
+    LOG(LOG_LEVEL_DEBUG, "g_sck_vsock_socket: vsock disabled at compile time");
     return -1;
 #endif
 }
@@ -702,6 +705,7 @@ get_peer_description(const union sock_info *sock_info,
             }
 
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
 
             case AF_VSOCK:
             {
@@ -713,6 +717,18 @@ get_peer_description(const union sock_info *sock_info,
                 break;
             }
 
+#elif defined(__FreeBSD__)
+
+            case AF_HYPERV:
+            {
+                const struct sockaddr_hvs *sa_hvs = &sock_info->sa_hvs;
+
+                g_snprintf(desc, bytes, "AF_HYPERV:port=%u", sa_hvs->hvs_port);
+
+                break;
+            }
+
+#endif
 #endif
             default:
                 g_snprintf(desc, bytes, "Unknown address family %d", family);
@@ -1034,6 +1050,7 @@ int
 g_sck_vsock_bind(int sck, const char *port)
 {
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
     struct sockaddr_vm s;
 
     g_memset(&s, 0, sizeof(struct sockaddr_vm));
@@ -1042,6 +1059,17 @@ g_sck_vsock_bind(int sck, const char *port)
     s.svm_cid = VMADDR_CID_ANY;
 
     return bind(sck, (struct sockaddr *)&s, sizeof(struct sockaddr_vm));
+#elif defined(__FreeBSD__)
+    struct sockaddr_hvs s;
+
+    g_memset(&s, 0, sizeof(struct sockaddr_hvs));
+    s.sa_family = AF_HYPERV;
+    s.hvs_port = atoi(port);
+
+    return bind(sck, (struct sockaddr *)&s, sizeof(struct sockaddr_hvs));
+#else
+    return -1;
+#endif
 #else
     return -1;
 #endif
@@ -1052,6 +1080,7 @@ int
 g_sck_vsock_bind_address(int sck, const char *port, const char *address)
 {
 #if defined(XRDP_ENABLE_VSOCK)
+#if defined(__linux__)
     struct sockaddr_vm s;
 
     g_memset(&s, 0, sizeof(struct sockaddr_vm));
@@ -1060,6 +1089,18 @@ g_sck_vsock_bind_address(int sck, const char *port, const char *address)
     s.svm_cid = atoi(address);
 
     return bind(sck, (struct sockaddr *)&s, sizeof(struct sockaddr_vm));
+#elif defined(__FreeBSD__)
+    struct sockaddr_hvs s;
+
+    g_memset(&s, 0, sizeof(struct sockaddr_hvs));
+    s.sa_family = AF_HYPERV;
+    s.hvs_port = atoi(port);
+    // channel/address currently unsupported in FreeBSD 13.
+
+    return bind(sck, (struct sockaddr *)&s, sizeof(struct sockaddr_hvs));
+#else
+    return -1;
+#endif
 #else
     return -1;
 #endif
@@ -2603,7 +2644,7 @@ g_create_dir(const char *dirname)
 #if defined(_WIN32)
     return CreateDirectoryA(dirname, 0); // test this
 #else
-    return mkdir(dirname, (mode_t) - 1) == 0;
+    return mkdir(dirname, 0777) == 0;
 #endif
 }
 
@@ -2924,10 +2965,28 @@ g_set_alarm(void (*func)(int), unsigned int secs)
 #if defined(_WIN32)
     return 0;
 #else
+    struct sigaction action;
+
     /* Cancel any previous alarm to prevent a race */
     unsigned int rv = alarm(0);
-    signal(SIGALRM, func);
-    (void)alarm(secs);
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGALRM, &action, NULL);
+    if (func != NULL && secs > 0)
+    {
+        (void)alarm(secs);
+    }
     return rv;
 #endif
 }
@@ -2939,7 +2998,22 @@ g_signal_child_stop(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGCHLD, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        // Don't need to know when children are stopped or started
+        action.sa_flags = (SA_RESTART | SA_NOCLDSTOP);
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGCHLD, &action, NULL);
 #endif
 }
 
@@ -2950,7 +3024,21 @@ g_signal_segfault(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGSEGV, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESETHAND; // This is a one-shot
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGSEGV, &action, NULL);
 #endif
 }
 
@@ -2961,7 +3049,21 @@ g_signal_hang_up(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGHUP, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGHUP, &action, NULL);
 #endif
 }
 
@@ -2972,7 +3074,21 @@ g_signal_user_interrupt(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGINT, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGINT, &action, NULL);
 #endif
 }
 
@@ -2983,7 +3099,21 @@ g_signal_terminate(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGTERM, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGTERM, &action, NULL);
 #endif
 }
 
@@ -2994,7 +3124,21 @@ g_signal_pipe(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGPIPE, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGPIPE, &action, NULL);
 #endif
 }
 
@@ -3005,7 +3149,21 @@ g_signal_usr1(void (*func)(int))
 {
 #if defined(_WIN32)
 #else
-    signal(SIGUSR1, func);
+    struct sigaction action;
+
+    if (func == NULL)
+    {
+        action.sa_handler = SIG_DFL;
+        action.sa_flags = 0;
+    }
+    else
+    {
+        action.sa_handler = func;
+        action.sa_flags = SA_RESTART;
+    }
+    sigemptyset (&action.sa_mask);
+
+    sigaction(SIGUSR1, &action, NULL);
 #endif
 }
 
@@ -3510,42 +3668,95 @@ g_getgroup_info(const char *groupname, int *gid)
 }
 
 /*****************************************************************************/
-/* returns error */
-/* if zero is returned, then ok is set */
-/* does not work in win32 */
+#ifdef HAVE_GETGROUPLIST
+int
+g_check_user_in_group(const char *username, int gid, int *ok)
+{
+    int rv = 1;
+    struct passwd *pwd_1 = getpwnam(username);
+    if (pwd_1 != NULL)
+    {
+        // Get number of groups for user
+        //
+        // Some implementations of getgrouplist() (i.e. muslc) don't
+        // allow ngroups to be <1 on entry
+        int ngroups = 1;
+        GETGROUPS_T dummy;
+        getgrouplist(username, pwd_1->pw_gid, &dummy, &ngroups);
+
+        if (ngroups > 0) // Should always be true
+        {
+            GETGROUPS_T *grouplist;
+            grouplist = (GETGROUPS_T *)malloc(ngroups * sizeof(grouplist[0]));
+            if (grouplist != NULL)
+            {
+                // Now get the actual groups. The number of groups returned
+                // by this call is not necessarily the same as the number
+                // returned by the first call.
+                int allocgroups = ngroups;
+                getgrouplist(username, pwd_1->pw_gid, grouplist, &ngroups);
+                ngroups = MIN(ngroups, allocgroups);
+
+                rv = 0;
+                *ok = 0;
+
+                int i;
+                for (i = 0 ; i < ngroups; ++i)
+                {
+                    if (grouplist[i] == (GETGROUPS_T)gid)
+                    {
+                        *ok = 1;
+                        break;
+                    }
+                }
+                free(grouplist);
+            }
+        }
+    }
+    return rv;
+}
+/*****************************************************************************/
+#else // HAVE_GETGROUPLIST
 int
 g_check_user_in_group(const char *username, int gid, int *ok)
 {
 #if defined(_WIN32)
     return 1;
 #else
-    struct group *groups;
     int i;
 
-    groups = getgrgid(gid);
-
-    if (groups == 0)
+    struct passwd *pwd_1 = getpwnam(username);
+    struct group *groups = getgrgid(gid);
+    if (pwd_1 == NULL || groups == NULL)
     {
         return 1;
     }
 
-    *ok = 0;
-    i = 0;
-
-    while (0 != groups->gr_mem[i])
+    if (pwd_1->pw_gid == gid)
     {
-        if (0 == g_strcmp(groups->gr_mem[i], username))
-        {
-            *ok = 1;
-            break;
-        }
+        *ok = 1;
+    }
+    else
+    {
+        *ok = 0;
+        i = 0;
 
-        i++;
+        while (0 != groups->gr_mem[i])
+        {
+            if (0 == g_strcmp(groups->gr_mem[i], username))
+            {
+                *ok = 1;
+                break;
+            }
+
+            i++;
+        }
     }
 
     return 0;
 #endif
 }
+#endif // HAVE_GETGROUPLIST
 
 /*****************************************************************************/
 /* returns the time since the Epoch (00:00:00 UTC, January 1, 1970),
